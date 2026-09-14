@@ -13,10 +13,12 @@ const (
 
 // MenuEntry is one clickable line in the tray menu.
 type MenuEntry struct {
-	ID       int32  // stable numeric id, referenced by Event()
-	Label    string // e.g. the browser's display name
-	IconName string // theme icon name, or "" for none
-	Checked  bool   // true if this is the current default (shown as a radio dot)
+	ID         int32  // stable numeric id, referenced by Event()
+	Label      string // e.g. the browser's display name
+	IconName   string // theme icon name, or "" for none
+	Checked    bool   // true if this entry is active/selected
+	ToggleType string // "radio" (default) or "checkmark"; ignored for separators
+	Separator  bool   // if true, renders a visual divider; other fields are ignored
 }
 
 // Menu implements com.canonical.dbusmenu backing a single flat list of
@@ -112,39 +114,49 @@ type entryItem struct {
 	Children   []dbus.Variant
 }
 
+// entryProps builds the dbusmenu property map for a single MenuEntry.
+func entryProps(e MenuEntry) map[string]dbus.Variant {
+	if e.Separator {
+		return map[string]dbus.Variant{
+			"type":    dbus.MakeVariant("separator"),
+			"visible": dbus.MakeVariant(true),
+		}
+	}
+	toggleType := e.ToggleType
+	if toggleType == "" {
+		toggleType = "radio"
+	}
+	state := int32(0)
+	if e.Checked {
+		state = 1
+	}
+	p := map[string]dbus.Variant{
+		"label":        dbus.MakeVariant(e.Label),
+		"enabled":      dbus.MakeVariant(true),
+		"visible":      dbus.MakeVariant(true),
+		"toggle-type":  dbus.MakeVariant(toggleType),
+		"toggle-state": dbus.MakeVariant(state),
+	}
+	if e.IconName != "" {
+		p["icon-name"] = dbus.MakeVariant(e.IconName)
+	}
+	return p
+}
+
 func (m *Menu) buildLayout() entryItem {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	children := make([]dbus.Variant, 0, len(m.entries))
 	for _, e := range m.entries {
-		props := map[string]dbus.Variant{
-			"label":       dbus.MakeVariant(e.Label),
-			"enabled":     dbus.MakeVariant(true),
-			"visible":     dbus.MakeVariant(true),
-			"toggle-type": dbus.MakeVariant("radio"),
-		}
-		if e.Checked {
-			props["toggle-state"] = dbus.MakeVariant(int32(1))
-		} else {
-			props["toggle-state"] = dbus.MakeVariant(int32(0))
-		}
-		if e.IconName != "" {
-			props["icon-name"] = dbus.MakeVariant(e.IconName)
-		}
 		children = append(children, dbus.MakeVariant(entryItem{
-			ID:         e.ID,
-			Properties: props,
-			Children:   []dbus.Variant{},
+			ID: e.ID, Properties: entryProps(e), Children: []dbus.Variant{},
 		}))
 	}
-
 	return entryItem{
-		ID: 0, // root item id is always 0 per spec
-		Properties: map[string]dbus.Variant{
-			"children-display": dbus.MakeVariant("submenu"),
-		},
-		Children: children,
+		ID:         0,
+		Properties: map[string]dbus.Variant{"children-display": dbus.MakeVariant("submenu")},
+		Children:   children,
 	}
 }
 
@@ -175,24 +187,9 @@ func (m *Menu) GetGroupProperties(ids []int32, propertyNames []string) ([]groupP
 
 	var out []groupProps
 	for _, id := range ids {
-		e, ok := wanted[id]
-		if !ok {
-			continue
+		if e, ok := wanted[id]; ok {
+			out = append(out, groupProps{ID: id, Properties: entryProps(e)})
 		}
-		state := int32(0)
-		if e.Checked {
-			state = 1
-		}
-		out = append(out, groupProps{
-			ID: id,
-			Properties: map[string]dbus.Variant{
-				"label":        dbus.MakeVariant(e.Label),
-				"enabled":      dbus.MakeVariant(true),
-				"visible":      dbus.MakeVariant(true),
-				"toggle-type":  dbus.MakeVariant("radio"),
-				"toggle-state": dbus.MakeVariant(state),
-			},
-		})
 	}
 	return out, nil
 }

@@ -15,6 +15,7 @@ import (
 
 	"github.com/godbus/dbus/v5"
 
+	"browser-switcher/autostart"
 	"browser-switcher/browser"
 	"browser-switcher/tray"
 	"browser-switcher/xdgbrowser"
@@ -60,7 +61,7 @@ func main() {
 		}
 
 		entryToID = make(map[int32]string, len(browsers))
-		entries := make([]tray.MenuEntry, 0, len(browsers))
+		entries := make([]tray.MenuEntry, 0, len(browsers)+2)
 		for i, b := range browsers {
 			id := int32(i + 1) // 0 is reserved for the layout root
 			entryToID[id] = b.ID
@@ -71,19 +72,38 @@ func main() {
 				Checked:  b.ID == current,
 			})
 		}
+
+		nextID := int32(len(browsers) + 1)
+		entries = append(entries, tray.MenuEntry{ID: nextID, Separator: true})
+
+		autostartEnabled, _ := autostart.IsEnabled()
+		entries = append(entries, tray.MenuEntry{
+			ID:         nextID + 1,
+			Label:      "Launch at login",
+			ToggleType: "checkmark",
+			Checked:    autostartEnabled,
+		})
+
 		menu.SetEntries(entries)
 	}
 
 	menu.OnSelect = func(entryID int32) {
-		browserID, ok := entryToID[entryID]
-		if !ok {
-			return
+		if browserID, ok := entryToID[entryID]; ok {
+			if err := xdgbrowser.SetDefault(browserID); err != nil {
+				log.Printf("setting default browser to %s: %v", browserID, err)
+				return
+			}
+		} else {
+			if enabled, _ := autostart.IsEnabled(); enabled {
+				if err := autostart.Disable(); err != nil {
+					log.Printf("disabling autostart: %v", err)
+				}
+			} else {
+				if err := autostart.Enable(); err != nil {
+					log.Printf("enabling autostart: %v", err)
+				}
+			}
 		}
-		if err := xdgbrowser.SetDefault(browserID); err != nil {
-			log.Printf("setting default browser to %s: %v", browserID, err)
-			return
-		}
-		// Rescan so the checkmark moves to the new default immediately.
 		refresh()
 	}
 
