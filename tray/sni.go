@@ -8,6 +8,7 @@ package tray
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/godbus/dbus/v5"
 	"github.com/godbus/dbus/v5/introspect"
@@ -119,10 +120,15 @@ func (it *Item) registerWithWatcher() error {
 		return fmt.Errorf("bus name %s already taken", busName)
 	}
 
-	watcher := it.conn.Object(watcherBusName, watcherObjectPath)
-	call := watcher.Call(watcherInterface+".RegisterStatusNotifierItem", 0, busName)
-	if call.Err != nil {
-		return fmt.Errorf("registering with StatusNotifierWatcher (is a tray host like waybar running with the tray module enabled?): %w", call.Err)
-	}
+	go func() {
+		watcher := it.conn.Object(watcherBusName, watcherObjectPath)
+		for {
+			call := watcher.Call(watcherInterface+".RegisterStatusNotifierItem", 0, busName)
+			if call.Err == nil {
+				return
+			}
+			time.Sleep(1 * time.Second)
+		}
+	}()
 	return nil
 }
