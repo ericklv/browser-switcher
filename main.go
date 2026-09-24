@@ -44,6 +44,7 @@ func main() {
 	// entryToID maps menu entry id -> browser id, since dbusmenu ids
 	// must be int32 but browsers are keyed by their .desktop file id.
 	var entryToID map[int32]string
+	var quitEntryID int32
 
 	refresh := func() {
 		browsers, err := browser.Discover()
@@ -61,7 +62,7 @@ func main() {
 		}
 
 		entryToID = make(map[int32]string, len(browsers))
-		entries := make([]tray.MenuEntry, 0, len(browsers)+2)
+		entries := make([]tray.MenuEntry, 0, len(browsers)+3)
 		for i, b := range browsers {
 			id := int32(i + 1) // 0 is reserved for the layout root
 			entryToID[id] = b.ID
@@ -74,6 +75,7 @@ func main() {
 		}
 
 		nextID := int32(len(browsers) + 1)
+		quitEntryID = nextID + 2
 		entries = append(entries, tray.MenuEntry{ID: nextID, Separator: true})
 
 		autostartEnabled, _ := autostart.IsEnabled()
@@ -83,11 +85,20 @@ func main() {
 			ToggleType: "checkmark",
 			Checked:    autostartEnabled,
 		})
+		entries = append(entries, tray.MenuEntry{
+			ID:         quitEntryID,
+			Label:      "Quit",
+			ToggleType: "none",
+		})
 
 		menu.SetEntries(entries)
 	}
 
 	menu.OnSelect = func(entryID int32) {
+		if entryID == quitEntryID {
+			// Dropping the bus connection makes the watcher remove the icon.
+			os.Exit(0)
+		}
 		if browserID, ok := entryToID[entryID]; ok {
 			if err := xdgbrowser.SetDefault(browserID); err != nil {
 				log.Printf("setting default browser to %s: %v", browserID, err)

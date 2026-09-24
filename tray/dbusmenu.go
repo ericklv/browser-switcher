@@ -17,7 +17,7 @@ type MenuEntry struct {
 	Label      string // e.g. the browser's display name
 	IconName   string // theme icon name, or "" for none
 	Checked    bool   // true if this entry is active/selected
-	ToggleType string // "radio" (default) or "checkmark"; ignored for separators
+	ToggleType string // "radio" (default), "checkmark" or "none"; ignored for separators
 	Separator  bool   // if true, renders a visual divider; other fields are ignored
 }
 
@@ -123,8 +123,11 @@ func entryProps(e MenuEntry) map[string]dbus.Variant {
 		}
 	}
 	toggleType := e.ToggleType
-	if toggleType == "" {
+	switch toggleType {
+	case "":
 		toggleType = "radio"
+	case "none":
+		toggleType = ""
 	}
 	state := int32(0)
 	if e.Checked {
