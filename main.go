@@ -12,6 +12,7 @@ import (
 	"log"
 	"os"
 	"sort"
+	"sync"
 
 	"github.com/godbus/dbus/v5"
 
@@ -39,12 +40,13 @@ func main() {
 	if err != nil {
 		log.Fatalf("exporting tray item: %v", err)
 	}
-	_ = item
 
 	// entryToID maps menu entry id -> browser id, since dbusmenu ids
 	// must be int32 but browsers are keyed by their .desktop file id.
 	var entryToID map[int32]string
 	var quitEntryID int32
+	// mu guards the state above: godbus runs each D-Bus call in its own goroutine.
+	var mu sync.Mutex
 
 	refresh := func() {
 		browsers, err := browser.Discover()
@@ -61,11 +63,15 @@ func main() {
 			log.Printf("reading current default browser: %v", err)
 		}
 
+		trayIcon := "web-browser" // fallback when there's no default or it has no Icon=
 		entryToID = make(map[int32]string, len(browsers))
 		entries := make([]tray.MenuEntry, 0, len(browsers)+3)
 		for i, b := range browsers {
 			id := int32(i + 1) // 0 is reserved for the layout root
 			entryToID[id] = b.ID
+			if b.ID == current && b.Icon != "" {
+				trayIcon = b.Icon
+			}
 			entries = append(entries, tray.MenuEntry{
 				ID:       id,
 				Label:    b.Name,
@@ -92,9 +98,12 @@ func main() {
 		})
 
 		menu.SetEntries(entries)
+		item.SetIcon(trayIcon)
 	}
 
 	menu.OnSelect = func(entryID int32) {
+		mu.Lock()
+		defer mu.Unlock()
 		if entryID == quitEntryID {
 			// Dropping the bus connection makes the watcher remove the icon.
 			os.Exit(0)
@@ -118,7 +127,12 @@ func main() {
 		refresh()
 	}
 
-	refresh()
+	menu.OnAboutToShow = func() {
+		mu.Lock()
+		defer mu.Unlock()
+		refresh()
+	}
+	menu.OnAboutToShow() // initial fill
 
 	fmt.Fprintln(os.Stderr, "browser-switcher running; waiting for tray host to display the icon")
 	select {} // block forever; all work happens in D-Bus callbacks above

@@ -79,6 +79,9 @@ func NewItem(conn *dbus.Conn, iconName, title string, menu *Menu) (*Item, error)
 						{Name: "y", Type: "i", Direction: "in"},
 					}},
 				},
+				Signals: []introspect.Signal{
+					{Name: "NewIcon"},
+				},
 			},
 		},
 	}
@@ -90,6 +93,14 @@ func NewItem(conn *dbus.Conn, iconName, title string, menu *Menu) (*Item, error)
 		return nil, err
 	}
 	return it, nil
+}
+
+// SetIcon changes the tray icon to the given theme icon name. Hosts
+// re-read IconName on the NewIcon signal rather than PropertiesChanged,
+// so both are sent.
+func (it *Item) SetIcon(iconName string) {
+	it.props.SetMust(sniInterface, "IconName", iconName)
+	it.conn.Emit(sniObjectPath, sniInterface+".NewIcon")
 }
 
 // Activate is called by the host on a plain left-click of the icon.

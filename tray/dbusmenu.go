@@ -33,6 +33,8 @@ type Menu struct {
 
 	// OnSelect is called with the MenuEntry.ID the user clicked.
 	OnSelect func(id int32)
+	// OnAboutToShow is called right before the host displays the menu.
+	OnAboutToShow func()
 }
 
 // NewMenu exports a Menu at the given object path.
@@ -206,8 +208,13 @@ func (m *Menu) Event(id int32, eventID string, data dbus.Variant, timestamp uint
 	return nil
 }
 
-// AboutToShow is called right before the host displays the menu; we
-// have no lazy-loaded submenus, so nothing needs refreshing here.
+// AboutToShow is called right before the host displays the menu (or a
+// submenu, which we don't have). Returning true makes the host re-fetch
+// the layout after OnAboutToShow has had a chance to update it.
 func (m *Menu) AboutToShow(id int32) (bool, *dbus.Error) {
-	return false, nil
+	if id != 0 || m.OnAboutToShow == nil {
+		return false, nil
+	}
+	m.OnAboutToShow()
+	return true, nil
 }
